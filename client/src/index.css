@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-paper text-slate-900 dark:bg-navy-900 dark:text-slate-100;
+  @apply font-sans antialiased;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+/* Smooth theme transitions on every element that uses color tokens */
+*,
+*::before,
+*::after {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
+}
+
+/* Respect reduced motion globally */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visible, consistent keyboard focus ring across the app (accessibility §13.4) */
+:focus-visible {
+  outline: 2px solid #F0A500;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 dark:bg-navy-600;
+  border-radius: 8px;
+}
+
+.font-display {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+.font-mono-num {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Glassmorphism utility used on navbar/modals */
+.glass {
+  @apply bg-white/70 dark:bg-navy-900/60;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+/* Skeleton shimmer loader */
+.skeleton {
+  @apply bg-slate-200 dark:bg-navy-700 bg-shimmer bg-[length:200%_100%] animate-shimmer;
+}

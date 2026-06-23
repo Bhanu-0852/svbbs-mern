@@ -1,0 +1,99 @@
+name: CI
+
+# Closes the one item that's sat on the "not yet built" list since
+# Slice 17 introduced the test suite: 102 tests existed but nothing ran
+# them automatically. This workflow doesn't add new checks — it
+# automates exactly the manual verification steps that have been run
+# before every single slice throughout this build (see docs/ARCHITECTURE.md):
+# syntax-check every file, run the full test suite, confirm the server
+# actually boots, confirm the client actually builds.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  server:
+    name: Server — syntax, tests, boot
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the exact Node version this project has been tested
+          # against throughout development — not a guess at broad
+          # compatibility this hasn't actually been validated for.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install (exact versions from the committed lockfile)
+        run: npm ci
+
+      - name: Syntax-check every server file
+        # Vitest only loads files actually reachable from a test file's
+        # import graph — this catches a broken file that happens not to
+        # be imported by any test, the same gap manual verification has
+        # been closing by hand every slice.
+        run: |
+          for f in $(find . -name "*.js" -not -path "./node_modules/*"); do
+            node --check "$f"
+          done
+
+      - name: Run the test suite
+        run: npm test
+
+      - name: Confirm the server actually boots
+        run: |
+          cat > ./boot-check.mjs << 'EOF'
+          import app from './app.js'
+          let routeCount = 0
+          app._router.stack.forEach((layer) => {
+            if (layer.name === 'router' && layer.regexp) {
+              layer.handle.stack.forEach((r) => { if (r.route) routeCount++ })
+            }
+          })
+          console.log(`Server boots — ${routeCount} routes registered.`)
+          if (routeCount < 1) process.exit(1)
+          EOF
+          node ./boot-check.mjs
+          rm ./boot-check.mjs
+
+  client:
+    name: Client — build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install (exact versions from the committed lockfile)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Confirm no hardcoded cross-port API URL leaked into the build
+        # The exact regression documented in this project's own README
+        # troubleshooting section (client/.env setting an absolute
+        # localhost:5000 URL broke session cookies in production-style
+        # deployments) — cheap to check for permanently in CI.
+        run: |
+          if grep -rq "localhost:5000" dist/assets/*.js 2>/dev/null; then
+            echo "::error::Found a hardcoded localhost:5000 reference in the production build."
+            exit 1
+          fi
+          echo "Clean — no hardcoded cross-port URL in the build output."
