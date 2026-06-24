@@ -10,6 +10,8 @@ const api = axios.create({
 let accessToken = null
 let csrfToken = null
 
+const SESSION_KEY = 'svbbs_session'
+
 export function setAccessToken(token) {
   accessToken = token
 }
@@ -20,6 +22,35 @@ export function getAccessToken() {
 
 export function setCsrfToken(token) {
   csrfToken = token
+}
+
+export function saveSession(token, user) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      accessToken: token,
+      user,
+      expiresAt: Date.now() + 14 * 60 * 1000,
+    }))
+  } catch {}
+}
+
+export function loadSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    const session = JSON.parse(raw)
+    if (session.expiresAt < Date.now()) {
+      sessionStorage.removeItem(SESSION_KEY)
+      return null
+    }
+    return session
+  } catch {
+    return null
+  }
+}
+
+export function clearSession() {
+  try { sessionStorage.removeItem(SESSION_KEY) } catch {}
 }
 
 api.interceptors.request.use((config) => {
@@ -55,12 +86,14 @@ api.interceptors.response.use(
         refreshPromise = null
         setAccessToken(data.accessToken)
         if (data.csrfToken) setCsrfToken(data.csrfToken)
+        if (data.user) saveSession(data.accessToken, data.user)
         config.headers.Authorization = `Bearer ${data.accessToken}`
         return api(config)
       } catch (refreshErr) {
         refreshPromise = null
         setAccessToken(null)
         setCsrfToken(null)
+        clearSession()
         return Promise.reject(refreshErr)
       }
     }
