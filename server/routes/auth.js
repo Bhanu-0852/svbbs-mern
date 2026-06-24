@@ -27,8 +27,8 @@ router.post('/resend-verification', signupIpLimiter, authController.resendVerifi
 router.post('/login', loginIpLimiter, validate(loginSchema), authController.login)
 router.post('/login/request-otp', passwordResetIpLimiter, validate(requestEmailOtpSchema), authController.requestLoginOtp)
 router.post('/login/verify-otp', passwordResetIpLimiter, validate(verifyEmailOtpLoginSchema), authController.verifyLoginOtp)
-router.post('/refresh', requireCsrf, authController.refresh)
-router.post('/logout', requireCsrf, authController.logout)
+router.post('/refresh', authController.refresh)
+router.post('/logout', authController.logout)
 
 router.post('/forgot-password', passwordResetIpLimiter, validate(forgotPasswordSchema), authController.forgotPassword)
 router.post('/reset-password', passwordResetIpLimiter, validate(resetPasswordSchema), authController.resetPassword)
