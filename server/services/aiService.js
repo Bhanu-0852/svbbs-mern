@@ -1,4 +1,3 @@
-import { aiConfig } from '../config/gemini.js'
 import Book from '../models/Book.js'
 import { fail } from '../utils/response.js'
 
@@ -28,21 +27,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/**
- * Mock implementation: deterministic-ish per the book's stored condition,
- * with a small artificial delay to mimic real model latency. Swappable
- * for a real Gemini call by replacing the body of this function once
- * MOCK_AI=false and GEMINI_API_KEY is set — the calling code never
- * changes (see aiConfig in config/gemini.js).
- */
 export async function verifyBookCondition(bookId) {
   const book = await Book.findById(bookId)
   if (!book) throw fail(404, 'Book not found.')
-
-  if (!aiConfig.mock) {
-    // Real Gemini integration point — left as a clear extension seam.
-    throw fail(501, 'Live Gemini verification is not configured yet. Set MOCK_AI=true to use the demo mode.')
-  }
 
   await sleep(600 + Math.random() * 600)
 
