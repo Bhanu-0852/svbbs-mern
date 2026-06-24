@@ -30,7 +30,7 @@ import chatbotRoutes from './routes/chatbot.js'
 // ...each subsequent slice adds its own router here.
 
 const app = express()
-
+app.set('trust proxy', 1)
 /**
  * Middleware chain, in order, matching the build plan §9.1:
  * helmet -> cors -> rateLimiter -> cookieParser -> csrf (auth routes only)
