@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
-import api, { setAccessToken, getAccessToken } from '../services/api'
+import api, { setAccessToken, getAccessToken, setCsrfToken } from '../services/api'
 
 const AuthContext = createContext(undefined)
 
@@ -8,9 +8,6 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true)
   const initRef = useRef(false)
 
-  // On first load, try to silently refresh using the HttpOnly cookie —
-  // this is what makes "stay logged in" work without storing the access
-  // token anywhere persistent (spec §9.4: access token lives in memory only).
   useEffect(() => {
     if (initRef.current) return
     initRef.current = true
@@ -19,9 +16,11 @@ export function AuthProvider({ children }) {
       try {
         const { data } = await api.post('/auth/refresh')
         setAccessToken(data.accessToken)
+        if (data.csrfToken) setCsrfToken(data.csrfToken)
         setUser(data.user)
       } catch {
         setAccessToken(null)
+        setCsrfToken(null)
         setUser(null)
       } finally {
         setIsLoading(false)
@@ -32,12 +31,13 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async ({ name, email, password, role }) => {
     const { data } = await api.post('/auth/register', { name, email, password, role })
-    return data // { message: "check your inbox" } — generic by design
+    return data
   }, [])
 
   const login = useCallback(async ({ email, password, mfaCode, backupCode }) => {
     const { data } = await api.post('/auth/login', { email, password, mfaCode, backupCode })
     setAccessToken(data.accessToken)
+    if (data.csrfToken) setCsrfToken(data.csrfToken)
     setUser(data.user)
     return data.user
   }, [])
@@ -47,6 +47,7 @@ export function AuthProvider({ children }) {
       await api.post('/auth/logout')
     } finally {
       setAccessToken(null)
+      setCsrfToken(null)
       setUser(null)
     }
   }, [])
@@ -56,6 +57,7 @@ export function AuthProvider({ children }) {
       await api.post('/auth/logout-all')
     } finally {
       setAccessToken(null)
+      setCsrfToken(null)
       setUser(null)
     }
   }, [])
@@ -70,6 +72,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         user,
+        setUser,
         isLoading,
         isAuthenticated: !!user,
         register,
