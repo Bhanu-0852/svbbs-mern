@@ -8,7 +8,8 @@ import { getErrorMessage } from '../../utils/apiError'
 export default function BorrowModal({ open, onClose, book, walletBalance, onSuccess }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState(null) // { transaction } once confirmed
+  const [result, setResult] = useState(null)
+  const [closing, setClosing] = useState(false)
 
   if (!book) return null
 
@@ -17,6 +18,7 @@ export default function BorrowModal({ open, onClose, book, walletBalance, onSucc
   const cashDue = kcCost - kcUsed
 
   async function handleConfirm() {
+    if (submitting) return
     setSubmitting(true)
     setError('')
     try {
@@ -31,8 +33,11 @@ export default function BorrowModal({ open, onClose, book, walletBalance, onSucc
   }
 
   function handleClose() {
+    if (closing) return
+    setClosing(true)
     setResult(null)
     setError('')
+    setClosing(false)
     onClose()
   }
 
@@ -48,7 +53,11 @@ export default function BorrowModal({ open, onClose, book, walletBalance, onSucc
       ) : (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <img src={book.coverImage} alt="" className="w-12 h-16 object-cover rounded-sm shadow-card" />
+            <img
+              src={book.coverImage}
+              alt=""
+              className="w-12 h-16 object-cover rounded-sm shadow-card"
+            />
             <div>
               <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{book.title}</p>
               <p className="text-xs text-slate-400">{book.author}</p>
@@ -79,9 +88,28 @@ export default function BorrowModal({ open, onClose, book, walletBalance, onSucc
 
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-          <Button variant="kc" className="w-full" onClick={handleConfirm} disabled={submitting}>
-            {submitting ? 'Processing…' : `Confirm borrow`}
-          </Button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all
+              ${submitting
+                ? 'bg-kc-400 cursor-not-allowed opacity-80 text-white'
+                : 'bg-kc-500 hover:bg-kc-600 active:scale-95 text-white cursor-pointer'
+              }`}
+          >
+            {submitting ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+                Processing…
+              </>
+            ) : (
+              'Confirm borrow'
+            )}
+          </button>
         </div>
       )}
     </Modal>
