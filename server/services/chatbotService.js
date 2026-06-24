@@ -5,26 +5,32 @@ import KCWallet from '../models/KCWallet.js'
 import { BASE_KC, CATEGORY_BONUS } from '../utils/kcRules.js'
 import { EXAM_CATEGORIES } from '../data/examCategories.js'
 
-// ---------- Real Gemini call ----------
+// ─── Gemini API call ────────────────────────────────────────────────────────
 
-async function callGemini(messages, systemPrompt, modelOverride) {
-  const model = modelOverride || aiConfig.model
+async function callGemini(history, systemPrompt, model) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiConfig.apiKey}`
 
-  const contents = messages
-    .filter((m) => m.content && m.content.trim())
+  // Gemini requires alternating user/model roles — filter and fix
+  const contents = history
+    .filter((m) => m.content?.trim())
     .map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }))
 
-  // Gemini requires alternating user/model turns — ensure we start with user
-  const validContents = contents.length > 0 ? contents : [{ role: 'user', parts: [{ text: 'Hello' }] }]
+  // Ensure it starts with user
+  const validContents =
+    contents.length > 0 && contents[0].role === 'user'
+      ? contents
+      : [{ role: 'user', parts: [{ text: 'Hello' }] }]
 
   const body = {
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: validContents,
-    generationConfig: { maxOutputTokens: 512, temperature: 0.7 },
+    generationConfig: {
+      maxOutputTokens: 1024,
+      temperature: 0.8,
+    },
   }
 
   const res = await fetch(url, {
@@ -34,17 +40,19 @@ async function callGemini(messages, systemPrompt, modelOverride) {
   })
 
   if (!res.ok) {
-    const errText = await res.text()
-    const err = new Error(`Gemini API error: ${res.status} — ${errText}`)
+    const text = await res.text()
+    const err = new Error(`Gemini ${res.status}: ${text}`)
     err.status = res.status
     throw err
   }
 
   const data = await res.json()
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || null
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!text) throw new Error('Gemini returned empty response')
+  return text
 }
 
-// ---------- Context builder ----------
+// ─── User context for personalised answers ──────────────────────────────────
 
 async function buildUserContext(userId) {
   const [heldBooks, wallet] = await Promise.all([
@@ -55,7 +63,7 @@ async function buildUserContext(userId) {
   ])
 
   const availableBooks = await Book.find({ status: 'available' })
-    .select('title author categoryTags examTags kcValue')
+    .select('title author categoryTags kcValue')
     .limit(20)
     .sort({ createdAt: -1 })
 
@@ -73,118 +81,115 @@ async function buildUserContext(userId) {
       kcValue: b.kcValue,
       categories: b.categoryTags,
     })),
-    examSummary: EXAM_CATEGORIES.map((e) => `${e.code}: ${e.name}`).join(', '),
-    kcRules: Object.entries(BASE_KC).map(([c, v]) => `${c}=${v}KC`).join(', '),
-    bonusRules: Object.entries(CATEGORY_BONUS).map(([k, v]) => `${k}=+${v}KC`).join(', '),
   }
 }
 
-// ---------- System prompt ----------
+// ─── System prompt ───────────────────────────────────────────────────────────
 
 function buildSystemPrompt(ctx) {
-  return `You are the SVBBS Knowledge Bot — an intelligent AI assistant for the Smart Vendor Book Bank System, a platform where students deposit, borrow, donate, sell, exchange, and recycle textbooks using Knowledge Credits (KC).
+  const examList = EXAM_CATEGORIES.map((e) => `${e.code}: ${e.name}`).join(', ')
+  const kcRules = Object.entries(BASE_KC).map(([c, v]) => `${c} = ${v} KC`).join(', ')
+  const bonuses = Object.entries(CATEGORY_BONUS).map(([k, v]) => `+${v} for ${k}`).join(', ')
 
-LIVE USER DATA:
+  return `You are SVBBS Assistant — an intelligent, friendly AI assistant built into the Smart Vendor Book Bank System (SVBBS), a platform where students deposit, borrow, donate, sell, exchange, and recycle textbooks using Knowledge Credits (KC).
+
+You are like ChatGPT or Gemini — you can answer ANY question on any topic: maths, coding, science, history, general knowledge, career advice, writing help, and more. Always give complete, accurate, helpful answers.
+
+CURRENT USER CONTEXT (use this for personal questions):
 - KC Balance: ${ctx.kcBalance} KC
-- Borrowed books: ${
+- Books currently borrowed: ${
     ctx.heldBooks.length === 0
-      ? 'none currently'
-      : ctx.heldBooks.map((b) => `"${b.title}" by ${b.author} (due ${b.dueDate}${b.overdue ? ' — OVERDUE' : ''})`).join(', ')
+      ? 'none'
+      : ctx.heldBooks.map((b) => `"${b.title}" by ${b.author} (due ${b.dueDate}${b.overdue ? ' ⚠️ OVERDUE' : ''})`).join(', ')
   }
-- Available books right now: ${
+- Books available to borrow right now: ${
     ctx.availableBooks.length === 0
-      ? 'none available'
-      : ctx.availableBooks.map((b) => `"${b.title}" (${b.kcValue}KC)`).join(', ')
+      ? 'none currently available'
+      : ctx.availableBooks.map((b) => `"${b.title}" (${b.kcValue} KC)`).join(', ')
   }
 
-PLATFORM RULES:
-KC values by condition: ${ctx.kcRules}
-Category bonuses: ${ctx.bonusRules}
-Exam Hub covers: ${ctx.examSummary}
-Loan period: 14 days, no late fees. Waitlist system for books on loan.
+PLATFORM KNOWLEDGE:
+- KC earning: ${kcRules}
+- Category bonuses: ${bonuses}
+- Deposit a book → earn KC instantly
+- Borrow → spend KC (+ cash if balance is short), 14-day loan, no late fees
+- Donate → book is free for others (0 KC cost to borrow)
+- Sell → outright cash sale at your price
+- Exchange → swap two books, no KC involved
+- Recycle → for poor-condition books
+- Waitlist → join when a book is on loan, get notified when available
+- Exam Hub categories: ${examList}
 
-YOUR JOB:
-Answer EVERY question helpfully — maths problems, science concepts, coding help, general knowledge, history, anything at all. You are a full general-purpose AI that also knows about this platform.
-- For maths: show the working step by step
-- For coding: give working code with explanation  
-- For science/general knowledge: give a clear, accurate answer
+RESPONSE STYLE:
+- Be conversational, warm, and helpful — like talking to a knowledgeable friend
+- For maths/coding: show working step by step with clear explanations
+- For general questions: give thorough, accurate answers
 - For platform questions: use the live user data above
-- Be concise but complete. Never say you can't answer a general question.
-- Only use the book list above when recommending books — never invent titles.`
+- Vary your responses — never give the same answer twice
+- Use markdown formatting (bold, lists, code blocks) when it helps clarity
+- Keep responses focused — detailed when needed, concise when not
+- Never say you "can't" answer a general question — you can answer everything`
 }
 
-// ---------- Smart fallback (used when Gemini quota exhausted) ----------
+// ─── Smart fallback (when Gemini is unavailable) ────────────────────────────
 
 async function buildSmartFallback(userId, message) {
   const ctx = await buildUserContext(userId)
-  const msg = message.toLowerCase().trim()
+  const msg = message.toLowerCase()
 
-  // Due dates
-  if (/due|overdue|return|borrowed|my book/i.test(msg)) {
-    if (ctx.heldBooks.length === 0) return "You don't have any books on loan right now. Head to the Marketplace to borrow something!"
+  if (/^(hi|hello|hey|good\s*(morning|afternoon|evening)|howdy)/i.test(msg)) {
+    const greetings = [
+      `Hi there! 👋 I'm your SVBBS assistant. I can help with your KC balance (${ctx.kcBalance} KC), borrowed books, available titles, or any general question. What's on your mind?`,
+      `Hello! Great to see you. Your KC balance is ${ctx.kcBalance} KC. How can I help today?`,
+      `Hey! I'm here to help with SVBBS or anything else you'd like to ask about. What do you need?`,
+    ]
+    return greetings[Math.floor(Math.random() * greetings.length)]
+  }
+
+  if (/due|overdue|return|my book|borrowed/i.test(msg)) {
+    if (ctx.heldBooks.length === 0)
+      return "You don't have any books on loan right now. Browse the Marketplace to find something to borrow!"
     const lines = ctx.heldBooks.map(
-      (b) => `• "${b.title}" — ${b.overdue ? '⚠️ OVERDUE since' : 'due'} ${b.dueDate}`
+      (b) => `• **"${b.title}"** — ${b.overdue ? '⚠️ OVERDUE since' : 'due'} ${b.dueDate}`
     )
-    return `Your currently borrowed books:\n${lines.join('\n')}`
+    return `Here are your currently borrowed books:\n\n${lines.join('\n')}`
   }
 
-  // KC balance
-  if (/balance|how many kc|kc balance|my credit|my kc/i.test(msg)) {
-    return `Your current KC balance is **${ctx.kcBalance} KC**.\n\nEarn more by depositing books — condition and category determine the value.`
+  if (/balance|kc|credit|how much/i.test(msg)) {
+    return `Your current KC balance is **${ctx.kcBalance} KC**.\n\nEarn more by depositing books — condition and category both affect the value you receive.`
   }
 
-  // Available books
-  if (/available|what book|recommend|suggest|can i borrow/i.test(msg)) {
-    if (ctx.availableBooks.length === 0) return 'No books are available to borrow right now. Check back soon or browse the Marketplace.'
-    const list = ctx.availableBooks.slice(0, 5).map((b) => `• "${b.title}" — ${b.kcValue} KC`).join('\n')
-    return `Available books right now:\n${list}\n\nBrowse more at /marketplace.`
+  if (/available|what.*book|recommend|borrow|shelf/i.test(msg)) {
+    if (ctx.availableBooks.length === 0)
+      return 'No books are available right now. Check back soon or visit the Marketplace!'
+    const list = ctx.availableBooks
+      .slice(0, 5)
+      .map((b) => `• **"${b.title}"** by ${b.author} — ${b.kcValue} KC`)
+      .join('\n')
+    return `Here are some books available to borrow right now:\n\n${list}\n\nVisit the Marketplace to see all available books.`
   }
 
-  // KC rules
-  if (/earn|kc rule|knowledge credit|how much kc|condition|deposit worth/i.test(msg)) {
-    const bonuses = Object.entries(CATEGORY_BONUS).map(([k, v]) => `+${v} KC for ${k}`).join('\n')
-    return `**KC earning rules:**\n• Excellent condition: ${BASE_KC.excellent} KC\n• Good: ${BASE_KC.good} KC\n• Average: ${BASE_KC.average} KC\n• Poor: ${BASE_KC.poor} KC\n\n**Category bonuses:**\n${bonuses}`
+  if (/earn|deposit|how.*kc|condition|worth/i.test(msg)) {
+    const bonuses = Object.entries(CATEGORY_BONUS)
+      .map(([k, v]) => `+${v} KC for ${k}`)
+      .join(', ')
+    return `**KC earning rates by condition:**\n\n• Excellent: ${BASE_KC.excellent} KC\n• Good: ${BASE_KC.good} KC\n• Average: ${BASE_KC.average} KC\n• Poor: ${BASE_KC.poor} KC\n\n**Category bonuses (stacked on top):**\n${bonuses}`
   }
 
-  // Exam hub
-  if (/exam|upsc|gate|ssc|banking|cat|appsc|tspsc|railway|defence|ias|ips/i.test(msg)) {
-    const examList = EXAM_CATEGORIES.map((e) => `• **${e.code}** — ${e.name}`).join('\n')
-    return `The Exam Hub covers these exams:\n${examList}\n\nVisit /exam-hub to browse books for each exam.`
+  if (/exam|upsc|gate|ssc|cat|banking|railway|defence|appsc|tspsc/i.test(msg)) {
+    const list = EXAM_CATEGORIES.map((e) => `• **${e.code}** — ${e.name}`).join('\n')
+    return `The Exam Hub covers these government exams:\n\n${list}\n\nVisit /exam-hub to browse books for each category.`
   }
 
-  // Platform how-to
-  if (/how.*deposit|how.*donate|how.*sell|how.*exchange|how.*borrow|how.*recycle|how.*waitlist/i.test(msg)) {
-    return `**How the main flows work:**\n• **Deposit** — submit your book, earn KC instantly based on condition + category\n• **Donate** — same as deposit but the book is free for others (0 KC cost)\n• **Sell** — set a cash price, one-time outright sale\n• **Exchange** — propose a book swap with another student, no KC needed\n• **Borrow** — spend KC (+ cash if your balance is short) for a 14-day loan\n• **Recycle** — for poor-condition books that can't be lent or sold`
+  if (/deposit|donate|sell|exchange|recycle|waitlist/i.test(msg)) {
+    return `**How the book flows work:**\n\n• **Deposit** — submit your book, earn KC instantly based on condition + category\n• **Donate** — same but the book is free for others to borrow (0 KC)\n• **Sell** — set a cash price, outright sale\n• **Exchange** — propose a book swap, no KC needed\n• **Borrow** — spend KC (+ cash if short) for a 14-day loan\n• **Recycle** — for poor-condition books that can't be lent`
   }
 
-  // Maths — basic arithmetic at least
-  const mathMatch = msg.match(/^[\d\s\+\-\*\/\(\)\.\^%]+$/)
-  if (mathMatch || /calculate|what is \d|solve|\d+\s*[\+\-\*\/]\s*\d/i.test(msg)) {
-    try {
-      // Safe eval of simple arithmetic
-      const expr = msg.replace(/[^0-9+\-*/.() ]/g, '').trim()
-      if (expr) {
-        // eslint-disable-next-line no-new-func
-        const result = Function(`"use strict"; return (${expr})`)()
-        if (typeof result === 'number' && isFinite(result)) {
-          return `${expr} = **${result}**`
-        }
-      }
-    } catch {
-      // Fall through
-    }
-  }
-
-  // Greeting
-  if (/^(hi|hello|hey|good morning|good afternoon|good evening|howdy|sup|what'?s up)/i.test(msg)) {
-    return `Hi there! 👋 I'm the SVBBS assistant. I can help you with:\n\n• Your borrowed books and due dates\n• KC balance and earning rules\n• Available books to borrow\n• Exam Hub resources\n• How any platform feature works\n• General questions — maths, science, coding, and more\n\nWhat would you like to know?`
-  }
-
-  // General / unknown — honest about current state
-  return `I'm doing my best with limited context right now — the AI service is temporarily at capacity, so I'm running on my built-in knowledge.\n\nI can reliably answer questions about:\n• Your KC balance (${ctx.kcBalance} KC) and borrowed books\n• Available books, exam prep resources\n• How depositing, borrowing, selling, and exchanging works\n\nFor general questions like maths or coding, try again in a few minutes when the AI service resets — it will give you a full answer.`
+  // General fallback — honest and helpful
+  return `I'm running in offline mode right now, so I'm limited to platform-specific questions.\n\nI can help with:\n• Your KC balance (currently **${ctx.kcBalance} KC**)\n• Borrowed books and due dates\n• Available books to borrow\n• How any platform feature works (deposit, borrow, sell, exchange, etc.)\n• Exam Hub resources\n\nFor general questions like maths, coding, or science — try again in a moment when the AI service is back online!`
 }
 
-// ---------- Exports ----------
+// ─── Exports ────────────────────────────────────────────────────────────────
 
 export async function getHistory(userId) {
   return ChatMessage.find({ userId }).sort({ createdAt: 1 }).limit(100)
@@ -196,40 +201,31 @@ export async function sendMessage(userId, message) {
   let replyContent = null
 
   if (!aiConfig.mock && aiConfig.apiKey) {
-    // Get recent history for conversation context
-    const recentHistory = await ChatMessage.find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean()
+    const [ctx, recentHistory] = await Promise.all([
+      buildUserContext(userId),
+      ChatMessage.find({ userId }).sort({ createdAt: -1 }).limit(20).lean(),
+    ])
+
+    const systemPrompt = buildSystemPrompt(ctx)
     const history = recentHistory.reverse()
 
-    const ctx = await buildUserContext(userId)
-    const systemPrompt = buildSystemPrompt(ctx)
-
-    // Try primary model first
-    try {
-      replyContent = await callGemini(history, systemPrompt)
-    } catch (primaryErr) {
-      if (primaryErr.status === 429) {
-        console.warn(`[chatbot] ${aiConfig.model} quota exceeded — trying ${aiConfig.fallbackModel}`)
-        // Try fallback model (different quota pool)
-        try {
-          replyContent = await callGemini(history, systemPrompt, aiConfig.fallbackModel)
-        } catch (fallbackErr) {
-          if (fallbackErr.status !== 429) {
-            console.error('[chatbot] Fallback model error:', fallbackErr.message)
-          } else {
-            console.warn('[chatbot] Both models quota exceeded — using smart fallback')
-          }
+    // Try primary model, then fallback model on 429
+    for (const model of [aiConfig.model, aiConfig.fallbackModel]) {
+      try {
+        replyContent = await callGemini(history, systemPrompt, model)
+        break
+      } catch (err) {
+        if (err.status === 429) {
+          console.warn(`[chatbot] ${model} quota exceeded — trying next model`)
+          continue
         }
-      } else {
-        console.error('[chatbot] Gemini error:', primaryErr.message)
+        console.error(`[chatbot] ${model} error:`, err.message)
+        break
       }
     }
   }
 
-  // If Gemini didn't produce a reply (quota exhausted or not configured),
-  // use the smart fallback
+  // If Gemini unavailable, use smart fallback
   if (!replyContent) {
     replyContent = await buildSmartFallback(userId, message)
   }

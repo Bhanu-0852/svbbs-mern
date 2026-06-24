@@ -3,10 +3,8 @@ import { env } from './env.js'
 export const aiConfig = {
   mock: env.MOCK_AI,
   apiKey: env.GEMINI_API_KEY,
-  // Primary model — if quota exhausted (429), chatbotService automatically
-  // retries with the fallbackModel before giving up to the smart fallback.
   model: 'gemini-2.0-flash',
-  fallbackModel: 'gemini-2.0-flash-lite',
+  fallbackModel: 'gemini-1.5-flash',
 }
 
 if (aiConfig.mock) {
