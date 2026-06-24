@@ -113,17 +113,19 @@ RESPONSE STYLE:
 
 async function buildSmartFallback(userId, message) {
   const ctx = await buildUserContext(userId)
-  const msg = message.toLowerCase()
+  const msg = message.toLowerCase().trim()
 
-  if (/^(hi|hello|hey|good\s*(morning|afternoon|evening)|howdy)/i.test(msg)) {
+  // Greetings
+  if (/^(hi|hello|hey|good\s*(morning|afternoon|evening)|howdy|sup|what'?s up)/i.test(msg)) {
     const greetings = [
-      `Hi! 👋 I'm your SVBBS assistant. Your KC balance is **${ctx.kcBalance} KC**. Ask me about your books, platform features, or anything else!`,
-      `Hello! Great to see you. You have **${ctx.kcBalance} KC** in your wallet. How can I help?`,
-      `Hey there! I'm here to help with SVBBS or any question you have. What's on your mind?`,
+      `Hi! 👋 I'm your SVBBS assistant. Your KC balance is **${ctx.kcBalance} KC**. I can help with your books, platform features, or any general question — maths, coding, science, anything. What would you like to know?`,
+      `Hello! Great to see you. You have **${ctx.kcBalance} KC** in your wallet. Ask me anything — I'm here to help!`,
+      `Hey there! 😊 I'm here to help with SVBBS or any topic you have in mind. What's on your mind?`,
     ]
     return greetings[Math.floor(Math.random() * greetings.length)]
   }
 
+  // Platform: due dates
   if (/due|overdue|return|my book|borrowed/i.test(msg)) {
     if (ctx.heldBooks.length === 0)
       return "You don't have any books on loan right now. Browse the Marketplace to find something to borrow!"
@@ -133,11 +135,13 @@ async function buildSmartFallback(userId, message) {
     return `Your currently borrowed books:\n\n${lines.join('\n')}`
   }
 
-  if (/balance|kc|credit|how much/i.test(msg)) {
-    return `Your KC balance is **${ctx.kcBalance} KC**.\n\nEarn more by depositing books — condition and category both affect the value.`
+  // Platform: KC balance
+  if (/balance|my kc|my credit|how many kc|how much kc/i.test(msg)) {
+    return `Your KC balance is **${ctx.kcBalance} KC**.\n\nEarn more by depositing books — condition and category both affect the value. Excellent condition books earn the most.`
   }
 
-  if (/available|what.*book|recommend|borrow.*book/i.test(msg)) {
+  // Platform: available books
+  if (/available|what.*book|recommend|borrow.*book|can i borrow/i.test(msg)) {
     if (ctx.availableBooks.length === 0)
       return 'No books available right now. Check the Marketplace for the latest listings!'
     const list = ctx.availableBooks
@@ -147,21 +151,65 @@ async function buildSmartFallback(userId, message) {
     return `Available books right now:\n\n${list}\n\nVisit the Marketplace to see all available books.`
   }
 
-  if (/earn|deposit|how.*kc|condition|worth/i.test(msg)) {
+  // Platform: KC rules
+  if (/earn|deposit.*kc|how.*kc.*work|kc.*rule|condition.*worth/i.test(msg)) {
     const bonuses = Object.entries(CATEGORY_BONUS).map(([k, v]) => `+${v} KC for ${k}`).join(', ')
-    return `**KC earning rates:**\n\n• Excellent: ${BASE_KC.excellent} KC\n• Good: ${BASE_KC.good} KC\n• Average: ${BASE_KC.average} KC\n• Poor: ${BASE_KC.poor} KC\n\n**Bonuses:** ${bonuses}`
+    return `**KC earning rates by condition:**\n\n• Excellent: ${BASE_KC.excellent} KC\n• Good: ${BASE_KC.good} KC\n• Average: ${BASE_KC.average} KC\n• Poor: ${BASE_KC.poor} KC\n\n**Category bonuses (added on top):** ${bonuses}`
   }
 
-  if (/exam|upsc|gate|ssc|cat|banking|railway|defence|appsc|tspsc/i.test(msg)) {
+  // Platform: exam hub
+  if (/exam|upsc|gate|ssc|cat|banking|railway|defence|appsc|tspsc|ias|ips/i.test(msg)) {
     const list = EXAM_CATEGORIES.map((e) => `• **${e.code}** — ${e.name}`).join('\n')
-    return `The Exam Hub covers:\n\n${list}\n\nVisit /exam-hub to browse books for each exam.`
+    return `The Exam Hub covers:\n\n${list}\n\nVisit /exam-hub to browse books for each exam category.`
   }
 
-  if (/deposit|donate|sell|exchange|recycle|waitlist/i.test(msg)) {
-    return `**Book flows:**\n\n• **Deposit** → earn KC instantly\n• **Donate** → book becomes free for others\n• **Sell** → cash sale at your price\n• **Exchange** → swap with another student\n• **Borrow** → spend KC, 14-day loan\n• **Recycle** → for poor-condition books`
+  // Platform: how flows work
+  if (/how.*deposit|how.*donate|how.*sell|how.*exchange|how.*borrow|how.*recycle|how.*waitlist/i.test(msg)) {
+    return `**How the book flows work:**\n\n• **Deposit** → submit your book, earn KC instantly based on condition + category\n• **Donate** → same as deposit but the book is free for others to borrow (0 KC)\n• **Sell** → set a cash price, one-time outright sale\n• **Exchange** → propose a book swap with another student, no KC needed\n• **Borrow** → spend KC (+ cash if short) for a 14-day loan, no late fees\n• **Recycle** → for poor-condition books that can't be lent or sold`
   }
 
-  return `I'm running on my built-in knowledge right now (AI quota temporarily at capacity). I can answer:\n\n• Your KC balance (**${ctx.kcBalance} KC**) and borrowed books\n• How depositing, borrowing, selling, exchanging works\n• Exam Hub resources\n\nFor general questions like maths or coding — try again in a few minutes when full AI is back!`
+  // General: Maths
+  if (/\b(calculate|solve|what is|compute|find|simplify|\d+\s*[\+\-\*\/\^]\s*\d+)/i.test(msg)) {
+    try {
+      const expr = msg.replace(/what is|calculate|find|solve|compute/gi, '').replace(/[^0-9+\-*/.() ]/g, '').trim()
+      if (expr && expr.length > 0) {
+        // eslint-disable-next-line no-new-func
+        const result = Function(`"use strict"; return (${expr})`)()
+        if (typeof result === 'number' && isFinite(result)) {
+          return `**${expr} = ${result}**\n\nNeed help with more complex maths? Ask me any maths question and I'll show the full working!`
+        }
+      }
+    } catch {}
+    return `I can help with maths! For complex calculations and step-by-step working, the full AI mode gives the best answers. Try again in a few minutes for detailed maths help!`
+  }
+
+  // General: Coding
+  if (/\b(code|coding|program|javascript|python|java|react|node|html|css|sql|function|array|loop|bug|error|debug)\b/i.test(msg)) {
+    return `I can help with coding! For **"${message}"**:\n\nFor detailed code examples and debugging help, I work best with the full AI mode. Try again in a few minutes for complete coding assistance with examples and explanations!`
+  }
+
+  // General: Science
+  if (/\b(science|physics|chemistry|biology|atom|molecule|force|energy|evolution|cell|dna|gravity|light|sound|electricity)\b/i.test(msg)) {
+    return `Great science question about **"${message}"**!\n\nScience topics are best answered with the full AI — detailed explanations with examples. Try again shortly for a comprehensive answer!`
+  }
+
+  // General: History / Geography
+  if (/\b(history|historical|who was|when did|where is|capital of|country|india|world|war|independence|founded|president|king|queen)\b/i.test(msg)) {
+    return `Good question! For **"${message}"** — I can answer this thoroughly in full AI mode with detailed context and accuracy. Try again shortly for a comprehensive response!`
+  }
+
+  // General: Career / Study advice
+  if (/\b(career|job|resume|interview|study|tips|advice|how to learn|skill|salary|placement|mba|engineering)\b/i.test(msg)) {
+    return `Career and study advice is one of my strengths! Here are quick tips for **"${message}"**:\n\n• Build real projects to showcase your skills\n• Practice consistently — 1 hour daily compounds significantly\n• For tech: DSA + System Design + one strong tech stack\n• Soft skills matter as much as technical skills\n\nAsk me something specific for a more detailed answer!`
+  }
+
+  // General: Writing
+  if (/\b(write|essay|paragraph|letter|email|report|summary|explain|describe)\b/i.test(msg)) {
+    return `I can help with writing! For **"${message}"**:\n\nShare more details — topic, length, tone (formal/informal), purpose — and I'll craft something tailored. Writing assistance works best when I know exactly what you need!`
+  }
+
+  // Anything else
+  return `You asked: **"${message}"**\n\nI'm currently in fallback mode (Gemini quota resets daily). I can answer right now:\n\n• Your KC balance (**${ctx.kcBalance} KC**) and borrowed books\n• How depositing, borrowing, selling, and exchanging works\n• Exam Hub resources (UPSC, GATE, SSC, CAT, and more)\n• Any SVBBS platform feature\n\nFor general questions like maths, coding, science, and history — try again in a few minutes when full AI is back!`
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
