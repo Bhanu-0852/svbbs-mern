@@ -31,6 +31,7 @@ import chatbotRoutes from './routes/chatbot.js'
 
 const app = express()
 app.set('trust proxy', 1)
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 /**
  * Middleware chain, in order, matching the build plan §9.1:
  * helmet -> cors -> rateLimiter -> cookieParser -> csrf (auth routes only)

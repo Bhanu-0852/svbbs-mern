@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { FiUser } from 'react-icons/fi'
 import Navbar from '../../components/layout/Navbar'
@@ -50,6 +50,16 @@ export default function Login() {
     if (location.state?.verified) notify('Email verified! You can now log in.', 'success')
     if (location.state?.passwordReset) notify('Password reset! Log in with your new password.', 'success')
   })
+
+  // Pre-warm Render the moment the login page loads.
+// Free tier sleeps after 15 min — this gives Render the ~2s it needs
+// to wake up before the user fills in their details and clicks Log in.
+useEffect(() => {
+  fetch(`${import.meta.env.VITE_API_URL || '/api'}/health`, {
+    method: 'GET',
+    mode: 'cors',
+  }).catch(() => {})
+}, [])
 
   async function handleSubmit(e) {
     e.preventDefault()
