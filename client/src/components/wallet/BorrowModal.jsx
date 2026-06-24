@@ -9,7 +9,6 @@ export default function BorrowModal({ open, onClose, book, walletBalance, onSucc
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
-  const [closing, setClosing] = useState(false)
 
   if (!book) return null
 
@@ -33,12 +32,13 @@ export default function BorrowModal({ open, onClose, book, walletBalance, onSucc
   }
 
   function handleClose() {
-    if (closing) return
-    setClosing(true)
-    setResult(null)
-    setError('')
-    setClosing(false)
+    // Call onClose first so the modal starts closing immediately,
+    // then reset internal state after the exit animation finishes.
     onClose()
+    setTimeout(() => {
+      setResult(null)
+      setError('')
+    }, 300)
   }
 
   return (
