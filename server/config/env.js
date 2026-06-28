@@ -28,7 +28,8 @@ export const env = {
 
   MOCK_AI: process.env.MOCK_AI !== 'false', // defaults to true so the app runs with no API key
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-
+  GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+  
   MOCK_PAYMENTS: process.env.MOCK_PAYMENTS !== 'false',
   RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
   RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
