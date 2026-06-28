@@ -16,6 +16,15 @@ export async function listBooks(query) {
   if (query.exam) {
     filter.examTags = query.exam
   }
+  if (query.condition) {
+    filter.condition = query.condition
+  }
+  // KC value range (used by AI natural-language search)
+  if (query.maxKc != null || query.minKc != null) {
+    filter.kcValue = {}
+    if (query.minKc != null) filter.kcValue.$gte = Number(query.minKc)
+    if (query.maxKc != null) filter.kcValue.$lte = Number(query.maxKc)
+  }
   filter.status = query.status || 'available' // default to browsable inventory only
 
   // Mongo doesn't allow mixing a $meta textScore projection with a field
