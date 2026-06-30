@@ -4,6 +4,7 @@ import { FiArrowLeft } from 'react-icons/fi'
 import { format } from 'date-fns'
 import AIBookSummary from '../../components/ai/AIBookSummary'
 import BookAdvisor from '../../components/ai/BookAdvisor'
+import ExchangeMatchPanel from '../../components/ai/ExchangeMatchPanel'
 import Navbar from '../../components/layout/Navbar'
 import Footer from '../../components/layout/Footer'
 import BookCover from '../../components/books/BookCover'
@@ -145,6 +146,7 @@ export default function BookDetail() {
   }
 
   const statusInfo = STATUS_CONFIG[book.status] || STATUS_CONFIG.available
+  const isOwner = isAuthenticated && book.ownerId?._id === user?._id
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -202,11 +204,11 @@ export default function BookDetail() {
             </p>
 
             <AIBookSummary
-  title={book.title}
-  author={book.author}
-  categoryTags={book.categoryTags}
-  description={book.description}
-/>
+              title={book.title}
+              author={book.author}
+              categoryTags={book.categoryTags}
+              description={book.description}
+            />
 
             {/* Borrow / Buy / Exchange panel — which one shows depends on
                 how this book was listed. A sell or exchange listing isn't
@@ -219,22 +221,30 @@ export default function BookDetail() {
                 <BuyPanel
                   bookId={book._id}
                   salePrice={book.salePrice}
-                  isOwner={isAuthenticated && book.ownerId?._id === user?._id}
+                  isOwner={isOwner}
                   isAuthenticated={isAuthenticated}
                   isSold={book.status === 'sold'}
                   onPurchased={refetchBookDetail}
                 />
               </Card>
             ) : book.depositMethod === 'exchange' ? (
-              <Card className="mt-6" padding="p-5">
-                <p className="text-xs text-slate-400 mb-1">Listed for exchange</p>
-                <ExchangeProposePanel
-                  bookId={book._id}
-                  isOwner={isAuthenticated && book.ownerId?._id === user?._id}
-                  isAuthenticated={isAuthenticated}
-                  onProposed={refetchBookDetail}
-                />
-              </Card>
+              <>
+                <Card className="mt-6" padding="p-5">
+                  <p className="text-xs text-slate-400 mb-1">Listed for exchange</p>
+                  <ExchangeProposePanel
+                    bookId={book._id}
+                    isOwner={isOwner}
+                    isAuthenticated={isAuthenticated}
+                    onProposed={refetchBookDetail}
+                  />
+                </Card>
+
+                {/* AI Smart Exchange Matching — shown only to the book's
+                    owner, since it finds the best swap partners FOR this
+                    book. A non-owner viewing the listing wants to propose
+                    a swap (handled above), not see match suggestions. */}
+                {isOwner && <ExchangeMatchPanel bookId={book._id} />}
+              </>
             ) : (
               <Card className="mt-6" padding="p-5">
                 <div className="flex items-center justify-between">
@@ -294,16 +304,16 @@ export default function BookDetail() {
             )}
 
             <div className="mt-6">
-  <AIVerificationPanel bookId={book._id} />
-</div>
+              <AIVerificationPanel bookId={book._id} />
+            </div>
 
-<BookAdvisor
-  title={book.title}
-  author={book.author}
-  categoryTags={book.categoryTags}
-  examTags={book.examTags}
-  description={book.description}
-/>
+            <BookAdvisor
+              title={book.title}
+              author={book.author}
+              categoryTags={book.categoryTags}
+              examTags={book.examTags}
+              description={book.description}
+            />
 
             {history.length > 0 && (
               <div className="mt-8">

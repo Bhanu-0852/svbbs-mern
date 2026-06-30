@@ -13,6 +13,7 @@ import { useToast } from '../../components/ui/Toast'
 import api from '../../services/api'
 import { getErrorMessage } from '../../utils/apiError'
 import { format } from 'date-fns'
+import CareerMentorPanel from '../../components/ai/CareerMentorPanel'
 
 const CATEGORY_LABELS = {
   engineering: 'Engineering',
@@ -300,6 +301,11 @@ export default function StudentDashboard() {
             </div>
           </>
         )}
+      </div>
+
+      {/* AI Career Mentor — personalized roadmap from real borrow history */}
+      <div className="mt-8">
+        <CareerMentorPanel />
       </div>
 
       <div className="mt-8">
