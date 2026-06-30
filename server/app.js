@@ -27,11 +27,21 @@ import notificationRoutes from './routes/notifications.js'
 import rfidRoutes from './routes/rfid.js'
 import exchangeRoutes from './routes/exchanges.js'
 import chatbotRoutes from './routes/chatbot.js'
+import exchangeMatchRoutes from './routes/exchangeMatch.js'
+import careerMentorRoutes from './routes/careerMentor.js'
 // ...each subsequent slice adds its own router here.
 
 const app = express()
 app.set('trust proxy', 1)
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+
+// Registered before the full middleware chain so this responds as fast
+// and lightly as possible — used by the Login page to pre-warm Render's
+// free-tier instance out of cold sleep before the user finishes typing
+// their credentials. This is the single source of truth for /api/health;
+// see the note below about why a second, near-identical handler used to
+// exist further down and was removed.
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', time: new Date() }))
+
 /**
  * Middleware chain, in order, matching the build plan §9.1:
  * helmet -> cors -> rateLimiter -> cookieParser -> csrf (auth routes only)
@@ -69,7 +79,7 @@ app.use(
 app.use(apiLimiter)
 app.use(cookieParser())
 app.use(express.json({ limit: '1mb' }))
-app.use(mongoSanitize());
+app.use(mongoSanitize())
 
 if (env.NODE_ENV !== 'production') {
   app.use(morgan('dev'))
@@ -93,9 +103,11 @@ app.use('/api/notifications', notificationRoutes)
 app.use('/api/rfid', rfidRoutes)
 app.use('/api/exchanges', exchangeRoutes)
 app.use('/api/chatbot', chatbotRoutes)
+app.use('/api/exchange-match', exchangeMatchRoutes)
+app.use('/api/career-mentor', careerMentorRoutes)
 // ...
 
 app.use(notFoundHandler)
 app.use(errorHandler)
-app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }))
+
 export default app

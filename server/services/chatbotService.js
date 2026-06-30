@@ -1,89 +1,10 @@
 import { aiConfig } from '../config/gemini.js'
+import { generate } from './ai/aiProvider.js'
 import Book from '../models/Book.js'
 import ChatMessage from '../models/ChatMessage.js'
 import KCWallet from '../models/KCWallet.js'
 import { BASE_KC, CATEGORY_BONUS } from '../utils/kcRules.js'
 import { EXAM_CATEGORIES } from '../data/examCategories.js'
-
-// ─── Gemini API call ──────────────────────────────────────────────────────────
-
-async function callGemini(history, systemPrompt, model) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiConfig.apiKey}`
-
-  const contents = history
-    .filter((m) => m.content?.trim())
-    .map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }))
-
-  const validContents =
-    contents.length > 0 && contents[0].role === 'user'
-      ? contents
-      : [{ role: 'user', parts: [{ text: 'Hello' }] }]
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: validContents,
-      generationConfig: { maxOutputTokens: 1024, temperature: 0.8 },
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    const err = new Error(`Gemini ${res.status}: ${text}`)
-    err.status = res.status
-    throw err
-  }
-
-  const data = await res.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Gemini returned empty response')
-  return text
-}
-
-// ─── Groq API call (free fallback — fast Llama 3.3 70B) ──────────────────────
-
-async function callGroq(history, systemPrompt) {
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history
-      .filter((m) => m.content?.trim())
-      .map((m) => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content,
-      })),
-  ]
-
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${aiConfig.groqKey}`,
-    },
-    body: JSON.stringify({
-      model: aiConfig.groqModel,
-      messages,
-      max_tokens: 1024,
-      temperature: 0.8,
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    const err = new Error(`Groq ${res.status}: ${text}`)
-    err.status = res.status
-    throw err
-  }
-
-  const data = await res.json()
-  const text = data.choices?.[0]?.message?.content
-  if (!text) throw new Error('Groq returned empty response')
-  return text
-}
 
 // ─── User context ─────────────────────────────────────────────────────────────
 
@@ -149,7 +70,7 @@ RESPONSE STYLE:
 - Vary your responses — never repeat the same phrasing`
 }
 
-// ─── Smart fallback (when Gemini quota exhausted) ─────────────────────────────
+// ─── Smart fallback (when no AI provider is available or all fail) ───────────
 
 async function buildSmartFallback(userId, message) {
   const ctx = await buildUserContext(userId)
@@ -235,7 +156,7 @@ async function buildSmartFallback(userId, message) {
     return `I can help with writing! For **"${message}"**:\n\nShare more details — topic, length, tone (formal/informal), purpose — and I'll craft something tailored. Writing assistance works best when I know exactly what you need!`
   }
 
-  return `You asked: **"${message}"**\n\nI'm currently in fallback mode (Gemini quota resets daily). I can answer right now:\n\n• Your KC balance (**${ctx.kcBalance} KC**) and borrowed books\n• How depositing, borrowing, selling, and exchanging works\n• Exam Hub resources (UPSC, GATE, SSC, CAT, and more)\n• Any SVBBS platform feature\n\nFor general questions like maths, coding, science, and history — try again in a few minutes when full AI is back!`
+  return `You asked: **"${message}"**\n\nI'm currently in fallback mode (AI quota resets daily). I can answer right now:\n\n• Your KC balance (**${ctx.kcBalance} KC**) and borrowed books\n• How depositing, borrowing, selling, and exchanging works\n• Exam Hub resources (UPSC, GATE, SSC, CAT, and more)\n• Any SVBBS platform feature\n\nFor general questions like maths, coding, science, and history — try again in a few minutes when full AI is back!`
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
@@ -249,7 +170,7 @@ export async function sendMessage(userId, message) {
 
   let replyContent = null
 
-  if (!aiConfig.mock && aiConfig.apiKey) {
+  if (!aiConfig.mock) {
     const [ctx, recentHistory] = await Promise.all([
       buildUserContext(userId),
       ChatMessage.find({ userId }).sort({ createdAt: -1 }).limit(20).lean(),
@@ -258,29 +179,23 @@ export async function sendMessage(userId, message) {
     const systemPrompt = buildSystemPrompt(ctx)
     const history = recentHistory.reverse()
 
-    for (const model of [aiConfig.model, aiConfig.fallbackModel]) {
-      if (!model) continue
-      try {
-        replyContent = await callGemini(history, systemPrompt, model)
-        console.log(`[chatbot] ${model} responded`)
-        break
-      } catch (err) {
-        if (err.status === 429) {
-          console.warn(`[chatbot] ${model} quota exceeded — trying next`)
-          continue
-        }
-        console.error(`[chatbot] ${model} error:`, err.message)
-        break
-      }
-    }
-
-    if (!replyContent && aiConfig.groqKey) {
-      try {
-        replyContent = await callGroq(history, systemPrompt)
-        console.log('[chatbot] Groq responded')
-      } catch (err) {
-        console.warn('[chatbot] Groq error:', err.message)
-      }
+    // generate() internally cascades Gemini (flash → flash-lite) → Groq,
+    // returning the first success. Previously this cascade was hand-rolled
+    // here, gated behind a check for GEMINI_API_KEY specifically — which
+    // meant a Groq-only configuration (no Gemini key set) silently never
+    // tried Groq at all and fell straight to the static fallback below.
+    // Routing through the shared provider layer fixes that for free.
+    try {
+      const { text, provider } = await generate({
+        system: systemPrompt,
+        messages: history,
+        maxTokens: 1024,
+        temperature: 0.8,
+      })
+      replyContent = text
+      console.log(`[chatbot] ${provider} responded`)
+    } catch (err) {
+      console.warn('[chatbot] all AI providers failed:', err.message)
     }
   }
 
@@ -320,27 +235,17 @@ export async function explainFeature(featureLabel, userId = null) {
   const known = FEATURE_DESCRIPTIONS[featureLabel]
   const prompt = `In 2-3 friendly sentences, explain the "${featureLabel}" feature of SVBBS (Smart Vendor Book Bank System), a student textbook exchange platform that uses Knowledge Credits (KC).${known ? ` Context: it is ${known}.` : ''} Be concise, warm, and helpful. Address the student directly. No markdown headers.`
 
-  if (!aiConfig.mock && (aiConfig.apiKey || aiConfig.groqKey)) {
-    const history = [{ role: 'user', content: prompt }]
-    const systemPrompt = 'You are a helpful guide explaining features of the SVBBS textbook platform to students. Keep answers short and clear.'
-
-    if (aiConfig.apiKey) {
-      for (const model of [aiConfig.model, aiConfig.fallbackModel]) {
-        if (!model) continue
-        try {
-          return { explanation: await callGemini(history, systemPrompt, model), source: 'ai' }
-        } catch (err) {
-          if (err.status === 429) continue
-          break
-        }
-      }
-    }
-    if (aiConfig.groqKey) {
-      try {
-        return { explanation: await callGroq(history, systemPrompt), source: 'ai' }
-      } catch {
-        // fall through
-      }
+  if (!aiConfig.mock) {
+    try {
+      const { text } = await generate({
+        system: 'You are a helpful guide explaining features of the SVBBS textbook platform to students. Keep answers short and clear.',
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 1024,
+        temperature: 0.8,
+      })
+      return { explanation: text, source: 'ai' }
+    } catch {
+      // fall through to the static fallback below
     }
   }
 

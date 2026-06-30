@@ -1,13 +1,18 @@
 import { aiConfig } from '../config/gemini.js'
+import { generateJson } from './ai/aiProvider.js'
 import * as bookService from './bookService.js'
 
 const CATEGORIES = ['engineering', 'medical', 'government_exam', 'rare', 'arts', 'science', 'general']
 const CONDITIONS = ['excellent', 'good', 'average', 'poor']
 const EXAMS = ['UPSC', 'SSC', 'Banking', 'Railways', 'Defence', 'APPSC', 'TSPSC', 'GATE', 'CAT']
 
-// ─── Parse a natural-language query into structured filters via Gemini ────────
+// ─── Parse a natural-language query into structured filters via AI ───────────
+// Routed through the shared provider layer, so this now gets Gemini's
+// flash → flash-lite retry AND a Groq fallback "for free" — the original
+// hand-rolled version only ever tried one fixed Gemini model with no
+// fallback before dropping straight to the keyword parser below.
 
-async function parseQueryWithGemini(naturalQuery) {
+async function parseQueryWithAi(naturalQuery) {
   const prompt = `You convert a student's natural-language book search into structured JSON filters for a textbook platform.
 
 Available categories: ${CATEGORIES.join(', ')}
@@ -32,35 +37,19 @@ Examples:
 "engineering textbooks by morris mano" → {"category":"engineering","q":"morris mano"}
 "books between 50 and 200 credits" → {"minKc":50,"maxKc":200}`
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${aiConfig.model}:generateContent?key=${aiConfig.apiKey}`
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: 300, temperature: 0.2 },
-    }),
+  const { data, provider } = await generateJson({
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens: 300,
+    temperature: 0.2,
   })
-
-  if (!res.ok) {
-    const text = await res.text()
-    const err = new Error(`Gemini ${res.status}: ${text}`)
-    err.status = res.status
-    throw err
-  }
-
-  const data = await res.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Gemini returned empty response')
-
-  const clean = text.replace(/```json|```/g, '').trim()
-  return JSON.parse(clean)
+  return { filters: data, provider }
 }
 
 // ─── Keyword-based fallback parser (no AI needed) ─────────────────────────────
+// Exported so its logic is directly unit-tested — see
+// tests/aiSearchParser.test.js. Keep this export name stable.
 
-function parseQueryFallback(naturalQuery) {
+export function parseQueryFallback(naturalQuery) {
   const q = naturalQuery.toLowerCase()
   const filters = {}
 
@@ -90,7 +79,6 @@ function parseQueryFallback(naturalQuery) {
     if (q.includes(e.toLowerCase())) filters.exam = e
   }
 
-  // Categories (with synonyms)
   // Categories (with synonyms). Order matters: check the more specific
   // compound terms first so "computer science" maps to engineering, not
   // the generic "science" branch.
@@ -118,12 +106,13 @@ export async function aiSearch(naturalQuery) {
   let filters
   let parsedBy = 'fallback'
 
-  if (!aiConfig.mock && aiConfig.apiKey) {
+  if (!aiConfig.mock) {
     try {
-      filters = await parseQueryWithGemini(naturalQuery)
-      parsedBy = 'gemini'
+      const result = await parseQueryWithAi(naturalQuery)
+      filters = result.filters
+      parsedBy = result.provider
     } catch (err) {
-      console.warn('[ai-search] Gemini parse failed, using keyword fallback:', err.message)
+      console.warn('[ai-search] AI parse failed, using keyword fallback:', err.message)
     }
   }
 
