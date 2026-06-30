@@ -112,6 +112,7 @@ export default function StudentDashboard() {
   // Non-critical data — deferred so the page feels instant
   const [recommendations, setRecommendations] = useState(null)
   const [recBasis, setRecBasis] = useState(null)
+  const [aiInsight, setAiInsight] = useState(null)
   const [impact, setImpact] = useState(null)
 
   const loadMyBooks = useCallback(() => {
@@ -136,6 +137,7 @@ export default function StudentDashboard() {
         .then(({ data }) => {
           setRecommendations(data.recommendations)
           setRecBasis(data.basis)
+          setAiInsight(data.aiInsight || null)
         })
         .catch(() => setRecommendations([]))
 
@@ -250,6 +252,24 @@ export default function StudentDashboard() {
             Recommended for you
           </h2>
         </div>
+
+        {/* AI Insight card — shows the personalized reading narrative */}
+        {aiInsight && recBasis === 'borrow_history' && (
+          <div className="mb-4 rounded-xl p-px bg-gradient-kc">
+            <div className="rounded-[11px] bg-white dark:bg-navy-800 px-4 py-3 flex items-start gap-3">
+              <span className="text-kc-500 mt-0.5 shrink-0">✦</span>
+              <div>
+                <p className="text-2xs font-semibold uppercase tracking-wide text-kc-500 mb-1">
+                  AI Reading Insight
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {aiInsight.insight}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {recommendations === null ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {Array.from({ length: 6 }).map((_, i) => <BookCoverSkeleton key={i} />)}
@@ -258,11 +278,14 @@ export default function StudentDashboard() {
           <p className="text-sm text-slate-400">No recommendations available right now.</p>
         ) : (
           <>
-            <p className="text-xs text-slate-400 mb-4">
-              {recBasis === 'borrow_history'
-                ? "Based on the categories you've borrowed most."
-                : "Here's what's newest on the shelf."}
-            </p>
+            {/* Only show the plain caption when there's no AI insight to show */}
+            {!(aiInsight && recBasis === 'borrow_history') && (
+              <p className="text-xs text-slate-400 mb-4">
+                {recBasis === 'borrow_history'
+                  ? "Based on the categories you've borrowed most."
+                  : "Here's what's newest on the shelf."}
+              </p>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
               {recommendations.map(({ book, matchedCategories }) => (
                 <div key={book._id}>

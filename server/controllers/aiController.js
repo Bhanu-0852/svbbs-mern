@@ -39,3 +39,29 @@ export async function naturalSearch(req, res, next) {
     next(err)
   }
 }
+
+// AI book summary — generates a quick summary of a book before borrowing
+export async function bookSummary(req, res, next) {
+  try {
+    const { title, author, categoryTags, description } = req.body
+    if (!title || !author) throw fail(400, 'title and author are required.')
+    const { generateBookSummary } = await import('../services/bookSummaryService.js')
+    const result = await generateBookSummary({ title, author, categoryTags, description })
+    ok(res, result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// "Is this book right for me?" — answers a student's question about a book
+export async function askAboutBook(req, res, next) {
+  try {
+    const { question, title, author, categoryTags, examTags, description } = req.body
+    if (!question || !title) throw fail(400, 'question and title are required.')
+    const { askAboutBook: ask } = await import('../services/bookAdvisorService.js')
+    const result = await ask({ question, title, author, categoryTags, examTags, description })
+    ok(res, result)
+  } catch (err) {
+    next(err)
+  }
+}

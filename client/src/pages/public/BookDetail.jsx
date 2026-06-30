@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { FiArrowLeft } from 'react-icons/fi'
 import { format } from 'date-fns'
+import AIBookSummary from '../../components/ai/AIBookSummary'
+import BookAdvisor from '../../components/ai/BookAdvisor'
 import Navbar from '../../components/layout/Navbar'
 import Footer from '../../components/layout/Footer'
 import BookCover from '../../components/books/BookCover'
@@ -199,6 +201,13 @@ export default function BookDetail() {
               {book.description}
             </p>
 
+            <AIBookSummary
+  title={book.title}
+  author={book.author}
+  categoryTags={book.categoryTags}
+  description={book.description}
+/>
+
             {/* Borrow / Buy / Exchange panel — which one shows depends on
                 how this book was listed. A sell or exchange listing isn't
                 also borrowable; donate stays on the normal borrow panel
@@ -285,8 +294,16 @@ export default function BookDetail() {
             )}
 
             <div className="mt-6">
-              <AIVerificationPanel bookId={book._id} />
-            </div>
+  <AIVerificationPanel bookId={book._id} />
+</div>
+
+<BookAdvisor
+  title={book.title}
+  author={book.author}
+  categoryTags={book.categoryTags}
+  examTags={book.examTags}
+  description={book.description}
+/>
 
             {history.length > 0 && (
               <div className="mt-8">

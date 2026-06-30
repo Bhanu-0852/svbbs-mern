@@ -10,5 +10,6 @@ router.use(requireAuth)
 
 router.get('/history', chatbotController.getHistory)
 router.post('/message', validate(sendMessageSchema), chatbotController.sendMessage)
+router.post('/explain', chatbotController.explainFeature)
 
 export default router

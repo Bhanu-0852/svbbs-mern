@@ -194,5 +194,5 @@ export default function Marketplace() {
 
       <Footer />
     </div>
-  )
+  ) 
 }

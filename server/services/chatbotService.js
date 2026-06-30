@@ -45,6 +45,46 @@ async function callGemini(history, systemPrompt, model) {
   return text
 }
 
+// ─── Groq API call (free fallback — fast Llama 3.3 70B) ──────────────────────
+
+async function callGroq(history, systemPrompt) {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history
+      .filter((m) => m.content?.trim())
+      .map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+  ]
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${aiConfig.groqKey}`,
+    },
+    body: JSON.stringify({
+      model: aiConfig.groqModel,
+      messages,
+      max_tokens: 1024,
+      temperature: 0.8,
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    const err = new Error(`Groq ${res.status}: ${text}`)
+    err.status = res.status
+    throw err
+  }
+
+  const data = await res.json()
+  const text = data.choices?.[0]?.message?.content
+  if (!text) throw new Error('Groq returned empty response')
+  return text
+}
+
 // ─── User context ─────────────────────────────────────────────────────────────
 
 async function buildUserContext(userId) {
@@ -115,7 +155,6 @@ async function buildSmartFallback(userId, message) {
   const ctx = await buildUserContext(userId)
   const msg = message.toLowerCase().trim()
 
-  // Greetings
   if (/^(hi|hello|hey|good\s*(morning|afternoon|evening)|howdy|sup|what'?s up)/i.test(msg)) {
     const greetings = [
       `Hi! 👋 I'm your SVBBS assistant. Your KC balance is **${ctx.kcBalance} KC**. I can help with your books, platform features, or any general question — maths, coding, science, anything. What would you like to know?`,
@@ -125,7 +164,6 @@ async function buildSmartFallback(userId, message) {
     return greetings[Math.floor(Math.random() * greetings.length)]
   }
 
-  // Platform: due dates
   if (/due|overdue|return|my book|borrowed/i.test(msg)) {
     if (ctx.heldBooks.length === 0)
       return "You don't have any books on loan right now. Browse the Marketplace to find something to borrow!"
@@ -135,12 +173,10 @@ async function buildSmartFallback(userId, message) {
     return `Your currently borrowed books:\n\n${lines.join('\n')}`
   }
 
-  // Platform: KC balance
   if (/balance|my kc|my credit|how many kc|how much kc/i.test(msg)) {
     return `Your KC balance is **${ctx.kcBalance} KC**.\n\nEarn more by depositing books — condition and category both affect the value. Excellent condition books earn the most.`
   }
 
-  // Platform: available books
   if (/available|what.*book|recommend|borrow.*book|can i borrow/i.test(msg)) {
     if (ctx.availableBooks.length === 0)
       return 'No books available right now. Check the Marketplace for the latest listings!'
@@ -151,24 +187,20 @@ async function buildSmartFallback(userId, message) {
     return `Available books right now:\n\n${list}\n\nVisit the Marketplace to see all available books.`
   }
 
-  // Platform: KC rules
   if (/earn|deposit.*kc|how.*kc.*work|kc.*rule|condition.*worth/i.test(msg)) {
     const bonuses = Object.entries(CATEGORY_BONUS).map(([k, v]) => `+${v} KC for ${k}`).join(', ')
     return `**KC earning rates by condition:**\n\n• Excellent: ${BASE_KC.excellent} KC\n• Good: ${BASE_KC.good} KC\n• Average: ${BASE_KC.average} KC\n• Poor: ${BASE_KC.poor} KC\n\n**Category bonuses (added on top):** ${bonuses}`
   }
 
-  // Platform: exam hub
   if (/exam|upsc|gate|ssc|cat|banking|railway|defence|appsc|tspsc|ias|ips/i.test(msg)) {
     const list = EXAM_CATEGORIES.map((e) => `• **${e.code}** — ${e.name}`).join('\n')
     return `The Exam Hub covers:\n\n${list}\n\nVisit /exam-hub to browse books for each exam category.`
   }
 
-  // Platform: how flows work
   if (/how.*deposit|how.*donate|how.*sell|how.*exchange|how.*borrow|how.*recycle|how.*waitlist/i.test(msg)) {
     return `**How the book flows work:**\n\n• **Deposit** → submit your book, earn KC instantly based on condition + category\n• **Donate** → same as deposit but the book is free for others to borrow (0 KC)\n• **Sell** → set a cash price, one-time outright sale\n• **Exchange** → propose a book swap with another student, no KC needed\n• **Borrow** → spend KC (+ cash if short) for a 14-day loan, no late fees\n• **Recycle** → for poor-condition books that can't be lent or sold`
   }
 
-  // General: Maths
   if (/\b(calculate|solve|what is|compute|find|simplify|\d+\s*[\+\-\*\/\^]\s*\d+)/i.test(msg)) {
     try {
       const expr = msg.replace(/what is|calculate|find|solve|compute/gi, '').replace(/[^0-9+\-*/.() ]/g, '').trim()
@@ -180,35 +212,29 @@ async function buildSmartFallback(userId, message) {
         }
       }
     } catch {}
-    return `I can help with maths! For complex calculations and step-by-step working, the full AI mode gives the best answers. Try again in a few minutes for detailed maths help!`
+    return `I can help with maths! For complex calculations and step-by-step working, the full AI mode gives the best answers. Try again in a few minutes for detailed maths help, or ask me about SVBBS features in the meantime.`
   }
 
-  // General: Coding
   if (/\b(code|coding|program|javascript|python|java|react|node|html|css|sql|function|array|loop|bug|error|debug)\b/i.test(msg)) {
     return `I can help with coding! For **"${message}"**:\n\nFor detailed code examples and debugging help, I work best with the full AI mode. Try again in a few minutes for complete coding assistance with examples and explanations!`
   }
 
-  // General: Science
   if (/\b(science|physics|chemistry|biology|atom|molecule|force|energy|evolution|cell|dna|gravity|light|sound|electricity)\b/i.test(msg)) {
     return `Great science question about **"${message}"**!\n\nScience topics are best answered with the full AI — detailed explanations with examples. Try again shortly for a comprehensive answer!`
   }
 
-  // General: History / Geography
   if (/\b(history|historical|who was|when did|where is|capital of|country|india|world|war|independence|founded|president|king|queen)\b/i.test(msg)) {
     return `Good question! For **"${message}"** — I can answer this thoroughly in full AI mode with detailed context and accuracy. Try again shortly for a comprehensive response!`
   }
 
-  // General: Career / Study advice
   if (/\b(career|job|resume|interview|study|tips|advice|how to learn|skill|salary|placement|mba|engineering)\b/i.test(msg)) {
     return `Career and study advice is one of my strengths! Here are quick tips for **"${message}"**:\n\n• Build real projects to showcase your skills\n• Practice consistently — 1 hour daily compounds significantly\n• For tech: DSA + System Design + one strong tech stack\n• Soft skills matter as much as technical skills\n\nAsk me something specific for a more detailed answer!`
   }
 
-  // General: Writing
   if (/\b(write|essay|paragraph|letter|email|report|summary|explain|describe)\b/i.test(msg)) {
     return `I can help with writing! For **"${message}"**:\n\nShare more details — topic, length, tone (formal/informal), purpose — and I'll craft something tailored. Writing assistance works best when I know exactly what you need!`
   }
 
-  // Anything else
   return `You asked: **"${message}"**\n\nI'm currently in fallback mode (Gemini quota resets daily). I can answer right now:\n\n• Your KC balance (**${ctx.kcBalance} KC**) and borrowed books\n• How depositing, borrowing, selling, and exchanging works\n• Exam Hub resources (UPSC, GATE, SSC, CAT, and more)\n• Any SVBBS platform feature\n\nFor general questions like maths, coding, science, and history — try again in a few minutes when full AI is back!`
 }
 
@@ -247,6 +273,15 @@ export async function sendMessage(userId, message) {
         break
       }
     }
+
+    if (!replyContent && aiConfig.groqKey) {
+      try {
+        replyContent = await callGroq(history, systemPrompt)
+        console.log('[chatbot] Groq responded')
+      } catch (err) {
+        console.warn('[chatbot] Groq error:', err.message)
+      }
+    }
   }
 
   if (!replyContent) {
@@ -255,4 +290,62 @@ export async function sendMessage(userId, message) {
 
   const reply = await ChatMessage.create({ userId, role: 'assistant', content: replyContent })
   return { reply, mock: false }
+}
+
+// ─── Explain a platform feature (for contextual sidebar help) ────────────────
+
+const FEATURE_DESCRIPTIONS = {
+  Overview: 'the main dashboard showing wallet balance, borrowed books, and recent activity',
+  'Deposit a Book': 'where students submit a book to earn Knowledge Credits, or list it to donate, sell, or exchange',
+  'Academic Passport': "a verified record of a student's reading history with a shareable QR code",
+  Marketplace: 'the shelf of all available books to borrow with KC or buy with cash',
+  'Exam Hub': 'books grouped by government exam — UPSC, GATE, SSC, CAT, Banking, Railways, Defence, APPSC, TSPSC',
+  Scholarships: 'where a college admin awards KC grants to their own students',
+  'Demand Forecast': 'analytics showing which book categories students borrow most and which books have waitlists',
+  'Fraud Detection': 'security signals flagging suspicious logins and unusual transaction patterns for admin review',
+  'Sponsor a book': "where a CSR sponsor pays for a specific book on a student's behalf at zero cost to the student",
+  'RFID Status': 'physical book tracking — register tags and scan books in/out of the shelf',
+  'Revenue Tracking': "the recycler's view of scrap value earned from recycled books",
+}
+
+const STATIC_EXPLANATIONS = {
+  Overview: 'This is your home dashboard. It shows your Knowledge Credits balance, the books you currently have on loan with their due dates, and a feed of your recent activity. Start here to see everything at a glance.',
+  'Deposit a Book': "Use this to add a book to the system. Choose Deposit to earn KC instantly based on the book's condition and category, Donate to make it free for others, Sell for a cash price, or Exchange to swap it for another student's book.",
+  'Academic Passport': "Your Academic Passport is a verified record of every book you've borrowed and read. It comes with a shareable QR code, so you can showcase your reading history — great for scholarship or college applications.",
+  Marketplace: 'The Marketplace is the shelf of all available books. Borrow any book using your Knowledge Credits — and if your balance is short, top up the difference with cash. You can search, filter by category, or use AI Smart Search.',
+  'Exam Hub': 'The Exam Hub groups books by the government exam they help with — UPSC, GATE, SSC, CAT, Banking, Railways, Defence, APPSC, and TSPSC. Click any exam to see its dedicated shelf of preparation books.',
+}
+
+export async function explainFeature(featureLabel, userId = null) {
+  const known = FEATURE_DESCRIPTIONS[featureLabel]
+  const prompt = `In 2-3 friendly sentences, explain the "${featureLabel}" feature of SVBBS (Smart Vendor Book Bank System), a student textbook exchange platform that uses Knowledge Credits (KC).${known ? ` Context: it is ${known}.` : ''} Be concise, warm, and helpful. Address the student directly. No markdown headers.`
+
+  if (!aiConfig.mock && (aiConfig.apiKey || aiConfig.groqKey)) {
+    const history = [{ role: 'user', content: prompt }]
+    const systemPrompt = 'You are a helpful guide explaining features of the SVBBS textbook platform to students. Keep answers short and clear.'
+
+    if (aiConfig.apiKey) {
+      for (const model of [aiConfig.model, aiConfig.fallbackModel]) {
+        if (!model) continue
+        try {
+          return { explanation: await callGemini(history, systemPrompt, model), source: 'ai' }
+        } catch (err) {
+          if (err.status === 429) continue
+          break
+        }
+      }
+    }
+    if (aiConfig.groqKey) {
+      try {
+        return { explanation: await callGroq(history, systemPrompt), source: 'ai' }
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  const fallback =
+    STATIC_EXPLANATIONS[featureLabel] ||
+    `${featureLabel} is one of the features of SVBBS. ${known ? `It's ${known}.` : 'Click it to explore what it offers.'}`
+  return { explanation: fallback, source: 'static' }
 }

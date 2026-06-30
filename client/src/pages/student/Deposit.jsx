@@ -10,6 +10,7 @@ import { CardSkeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import api from '../../services/api'
 import { getErrorMessage } from '../../utils/apiError'
+import DepositPriceHelper from '../../components/ai/DepositPriceHelper'
 
 const sidebarItems = [
   { to: '/student', label: 'Overview', icon: FiHome },
@@ -378,6 +379,13 @@ export default function StudentDeposit() {
                 />
               </div>
             )}
+
+            {/* Live KC estimate — only renders for the 'deposit' method */}
+            <DepositPriceHelper
+              condition={form.condition}
+              categoryTags={form.categoryTags}
+              depositMethod={form.depositMethod}
+            />
 
             <Button type="submit" variant="primary" disabled={submitting} className="w-full justify-center">
               {submitting ? 'Listing…' : 'List this book'}

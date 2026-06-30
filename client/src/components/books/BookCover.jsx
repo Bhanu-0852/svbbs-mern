@@ -7,38 +7,22 @@ const SPRING = { stiffness: 300, damping: 22, mass: 0.5 }
 
 /**
  * Renders a book cover with a spine edge and page-thickness illusion so a
- * flat image reads as a physical book (image plan §3.1). Falls back to a
- * generated title/author placeholder if the image fails to load — covers
- * should never break into a gray box.
+ * flat image reads as a physical book (image plan §3.1).
  *
- * Two separate failure detections, deliberately, not just one:
- *  - onError: catches a genuine network/HTTP failure (the image request
- *    itself failed).
+ * Cover never breaks into a blank gray box. The title/author placeholder
+ * is ALWAYS rendered as the base layer, so even while the real cover is
+ * still downloading (or if it never loads), the user sees a proper styled
+ * cover — not a silver plate. The real image is layered on top and fades
+ * in only once it has successfully loaded as a real, non-degenerate image.
+ *
+ * Two separate failure detections, deliberately:
+ *  - onError: catches a genuine network/HTTP failure.
  *  - onLoad + naturalWidth/naturalHeight check: catches an image that
- *    technically loaded without erroring but is degenerate — a
- *    near-empty or 1x1 placeholder pixel some image hosts (including
- *    Open Library in certain edge cases) serve with a normal 200 OK
- *    instead of a real 404. onError alone never fires for this case,
- *    since the browser considers the load "successful" — without this
- *    second check, a degenerate image would render as an invisible box
- *    over the card's own background color instead of the real fallback.
- *
- * When interactive, the cover also tilts in real 3D toward the cursor
- * (mouse-tracked rotateX/rotateY via framer-motion, spring-smoothed) with
- * a glare sheen that moves across the surface — the signature visual
- * touch for a book platform specifically, applied everywhere a cover
- * appears since BookCard (Marketplace, Exam Hub, Recommendations, every
- * listing) already passes interactive.
- *
- * useReducedMotion() (not the app-level MotionConfig) is the deliberate
- * choice here: every component using framer-motion already imports it
- * for its own motion needs, so calling the hook costs nothing extra to
- * bundle, and it avoids importing framer-motion eagerly at the
- * always-loaded App.jsx root, which would risk pulling the whole library
- * out of its own lazily-fetched chunk for every visitor regardless of
- * whether they ever reach a page with a 3D effect.
+ *    technically loaded (200 OK) but is a degenerate 1x1 placeholder
+ *    pixel some hosts (including Open Library) serve instead of a 404.
  */
 export default function BookCover({ src, title, author, size = 'md', className = '', interactive = false }) {
+  const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
   const ref = useRef(null)
   const prefersReducedMotion = useReducedMotion()
@@ -50,6 +34,8 @@ export default function BookCover({ src, title, author, size = 'md', className =
     // side is treated as a degenerate placeholder pixel, not content.
     if (img.naturalWidth < 20 || img.naturalHeight < 20) {
       setFailed(true)
+    } else {
+      setLoaded(true)
     }
   }
 
@@ -87,6 +73,8 @@ export default function BookCover({ src, title, author, size = 'md', className =
     rawGlareOpacity.set(0)
   }
 
+  const showImage = src && !failed
+
   return (
     <motion.div
       ref={ref}
@@ -107,31 +95,36 @@ export default function BookCover({ src, title, author, size = 'md', className =
           interactive ? 'group-hover:shadow-book-hover' : ''
         } bg-slate-100 dark:bg-navy-700`}
       >
-        {!failed && src ? (
+        {/* BASE LAYER — always rendered. The styled title/author placeholder
+            means the user never sees a blank gray box, even mid-download. */}
+        <div className="absolute inset-0 h-full w-full flex flex-col items-center justify-center text-center p-3 bg-gradient-navy text-white">
+          <FiBook size={20} className="mb-2 opacity-70" />
+          <p className="font-display text-xs font-semibold leading-tight line-clamp-3">{title}</p>
+          {author && <p className="text-2xs text-slate-300 mt-1 line-clamp-1">{author}</p>}
+        </div>
+
+        {/* REAL IMAGE — layered on top, fades in only once truly loaded. */}
+        {showImage && (
           <img
             src={src}
             alt={`Cover of ${title}${author ? ` by ${author}` : ''}`}
             loading="lazy"
             onLoad={handleImageLoad}
             onError={() => setFailed(true)}
-            className="h-full w-full object-cover"
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
+              loaded ? 'opacity-100' : 'opacity-0'
+            }`}
           />
-        ) : (
-          <div className="h-full w-full flex flex-col items-center justify-center text-center p-3 bg-gradient-navy text-white">
-            <FiBook size={20} className="mb-2 opacity-70" />
-            <p className="font-display text-xs font-semibold leading-tight line-clamp-3">{title}</p>
-            {author && <p className="text-2xs text-slate-300 mt-1 line-clamp-1">{author}</p>}
-          </div>
         )}
 
         {/* spine shadow down the left edge for depth */}
-        <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/20 to-transparent" />
+        <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/20 to-transparent z-10" />
 
         {/* glare sheen — follows the cursor, only present when tilt is enabled */}
         {tiltEnabled && (
           <motion.div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0"
+            className="pointer-events-none absolute inset-0 z-10"
             style={{ opacity: glareOpacity, background: glareBackground }}
           />
         )}

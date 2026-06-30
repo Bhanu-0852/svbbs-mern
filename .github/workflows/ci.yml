@@ -7,6 +7,10 @@ name: CI
 # before every single slice throughout this build (see docs/ARCHITECTURE.md):
 # syntax-check every file, run the full test suite, confirm the server
 # actually boots, confirm the client actually builds.
+#
+# Later hardened to 117 tests with coverage reporting and a production
+# dependency security audit — the same gates a real team runs before
+# merging, not just "does it run."
 
 on:
   push:
@@ -46,8 +50,16 @@ jobs:
             node --check "$f"
           done
 
-      - name: Run the test suite
-        run: npm test
+      - name: Run the test suite with coverage
+        run: npm run test:coverage
+
+      - name: Security audit of production dependencies
+        # A real team gates merges on dependency vulnerability scanning.
+        # --omit=dev scans only what actually ships to users — dev-only
+        # tooling (vitest/vite) never reaches production, so its
+        # advisories shouldn't block a deploy. --audit-level=high fails
+        # the build on high/critical production vulnerabilities.
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Confirm the server actually boots
         run: |

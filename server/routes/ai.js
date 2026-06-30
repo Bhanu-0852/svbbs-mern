@@ -15,7 +15,13 @@ router.post(
   aiController.verifyBookPhoto
 )
 
-// Natural-language search — open to all (logged in or not), like book browsing
+// Natural-language search — open to all
 router.post('/search', attachUserIfPresent, aiController.naturalSearch)
+
+// Book summary — open to all visitors
+router.post('/book-summary', attachUserIfPresent, aiController.bookSummary)
+
+// "Is this book right for me?" — open to all visitors
+router.post('/ask-book', attachUserIfPresent, aiController.askAboutBook)
 
 export default router

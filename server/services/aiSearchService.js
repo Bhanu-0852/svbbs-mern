@@ -91,8 +91,12 @@ function parseQueryFallback(naturalQuery) {
   }
 
   // Categories (with synonyms)
-  if (/physics|chemistry|biology|science/.test(q)) filters.category = 'science'
-  else if (/engineering|mechanical|electrical|civil|computer/.test(q)) filters.category = 'engineering'
+  // Categories (with synonyms). Order matters: check the more specific
+  // compound terms first so "computer science" maps to engineering, not
+  // the generic "science" branch.
+  if (/computer science|comp sci|cse|software/.test(q)) filters.category = 'engineering'
+  else if (/engineering|mechanical|electrical|civil/.test(q)) filters.category = 'engineering'
+  else if (/physics|chemistry|biology|science/.test(q)) filters.category = 'science'
   else if (/medical|medicine|anatomy|mbbs/.test(q)) filters.category = 'medical'
   else if (/art|history|literature|philosophy/.test(q)) filters.category = 'arts'
   else if (/rare|collector|antique/.test(q)) filters.category = 'rare'

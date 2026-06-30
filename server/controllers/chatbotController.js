@@ -18,3 +18,13 @@ export async function sendMessage(req, res, next) {
     next(err)
   }
 }
+
+export async function explainFeature(req, res, next) {
+  try {
+    const feature = (req.body.feature || '').trim()
+    const result = await chatbotService.explainFeature(feature, req.user._id)
+    ok(res, result)
+  } catch (err) {
+    next(err)
+  }
+}
