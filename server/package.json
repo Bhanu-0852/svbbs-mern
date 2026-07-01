@@ -12,7 +12,6 @@
     "seed": "node seeds/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "node seeds/index.js",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
