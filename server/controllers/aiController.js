@@ -65,3 +65,16 @@ export async function askAboutBook(req, res, next) {
     next(err)
   }
 }
+
+// Reading difficulty analysis for a book
+export async function readingDifficulty(req, res, next) {
+  try {
+    const { title, author, categoryTags, examTags, description } = req.body
+    if (!title) throw fail(400, 'A book title is required.')
+    const { analyzeDifficulty } = await import('../services/readingDifficultyService.js')
+    const result = await analyzeDifficulty({ title, author, categoryTags, examTags, description })
+    ok(res, result)
+  } catch (err) {
+    next(err)
+  }
+}

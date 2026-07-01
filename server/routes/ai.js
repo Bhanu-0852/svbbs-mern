@@ -18,6 +18,9 @@ router.post(
 // Natural-language search — open to all
 router.post('/search', attachUserIfPresent, aiController.naturalSearch)
 
+// Reading difficulty analysis — open to all visitors deciding whether to borrow
+router.post('/reading-difficulty', attachUserIfPresent, aiController.readingDifficulty)
+
 // Book summary — open to all visitors
 router.post('/book-summary', attachUserIfPresent, aiController.bookSummary)
 

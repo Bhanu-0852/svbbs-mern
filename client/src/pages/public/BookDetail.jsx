@@ -4,6 +4,7 @@ import { FiArrowLeft } from 'react-icons/fi'
 import { format } from 'date-fns'
 import AIBookSummary from '../../components/ai/AIBookSummary'
 import BookAdvisor from '../../components/ai/BookAdvisor'
+import ReadingDifficultyPanel from '../../components/ai/ReadingDifficultyPanel'
 import ExchangeMatchPanel from '../../components/ai/ExchangeMatchPanel'
 import Navbar from '../../components/layout/Navbar'
 import Footer from '../../components/layout/Footer'
@@ -314,6 +315,14 @@ export default function BookDetail() {
               examTags={book.examTags}
               description={book.description}
             />
+
+            <ReadingDifficultyPanel
+  title={book.title}
+  author={book.author}
+  categoryTags={book.categoryTags}
+  examTags={book.examTags}
+  description={book.description}
+/>
 
             {history.length > 0 && (
               <div className="mt-8">

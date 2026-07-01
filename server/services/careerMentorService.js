@@ -57,7 +57,7 @@ async function buildStudentProfile(userId) {
   }
 }
 
-function buildFallbackRoadmap(profile) {
+export function buildFallbackRoadmap(profile) {
   const focus = profile.topCategories[0] || profile.department || 'your field'
   return {
     summary: `Based on your ${profile.bookCount} borrowed book${profile.bookCount === 1 ? '' : 's'}, your reading leans toward ${focus}. Here's a starting roadmap — connect a richer AI provider for a deeper, personalized plan.`,
